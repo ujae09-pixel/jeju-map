@@ -15,11 +15,16 @@
   }
   /* 날씨 줄: 가로 스크롤 없이 화면 너비에 맞춰 줄바꿈 */
   #weather {
-    position: absolute; top: 0; left: 0; right: 0; min-height: 36px; z-index: 12;
+    position: absolute; top: 0; left: 0; right: 0; height: 36px; z-index: 12;
     background: rgba(255,255,255,.96); box-shadow: 0 1px 4px rgba(0,0,0,.25);
-    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 6px 10px;
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 4px 14px; padding: 6px 10px;
     font-size: 13px; color: #333; width: 100%;
+    overflow: hidden; cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: manipulation;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+            mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
+  /* 두 번 누르면 펼쳐져서 전체 지역이 줄바꿈되어 보임 */
+  #weather.open { height: auto; min-height: 36px; flex-wrap: wrap; overflow: visible; -webkit-mask-image: none; mask-image: none; }
   #weather .w { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
   #weather .w b { font-weight: 600; }
   #weather button { border: 0; background: #e7f5ff; color: #1c4e9d; border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; flex: none; }

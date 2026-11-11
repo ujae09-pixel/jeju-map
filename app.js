@@ -442,6 +442,15 @@ function init() {
   if (window.ResizeObserver) new ResizeObserver(syncWeatherHeight).observe(weatherEl);
   window.addEventListener('resize', syncWeatherHeight);
   syncWeatherHeight();
+  // 평소에는 1줄로 접혀 있고, 두 번 누르면(더블클릭/더블탭) 전체 지역 날씨가 펼쳐짐
+  weatherEl.title = '두 번 누르면 전체 날씨를 펼치거나 접습니다';
+  let lastWTap = 0;
+  weatherEl.addEventListener('click', ev => {
+    if (ev.target.closest('button')) return;
+    const now = Date.now();
+    if (now - lastWTap < 400) { weatherEl.classList.toggle('open'); lastWTap = 0; }
+    else lastWTap = now;
+  });
   const wcard = document.getElementById('wcard');
   let wdata = null;
 
@@ -453,15 +462,16 @@ function init() {
     const cnt = {}; low.forEach(c => { cnt[c.weather_code] = (cnt[c.weather_code] || 0) + 1; });
     const topCode = +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
     const w0 = WMO(topCode);
-    let html = '<span class="w"><b>제주도 전체</b> ' + w0[0] + ' ' + avg + '° ' + w0[1] + '</span>';
+    let html = '<button id="wbtn">📅 3일 예보</button>' +
+      '<span class="w"><b>제주도 전체</b> ' + w0[0] + ' ' + avg + '° ' + w0[1] + '</span>';
     wdata.forEach((d, i) => {
       const c = d.current, w = WMO(c.weather_code);
       html += '<span class="w"><b>' + esc(WEATHER_REGIONS[i].name) + '</b> ' + w[0] + ' ' + Math.round(c.temperature_2m) + '° · 💨' +
         (c.wind_speed_10m / 3.6).toFixed(1) + 'm/s' + (c.precipitation > 0 ? ' · 💧' + c.precipitation + 'mm' : '') + '</span>';
     });
     const t = new Date();
-    html += '<button id="wbtn">📅 여행 3일 예보</button><span class="upd">' +
-      String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ' 갱신 · 10분마다 자동</span>';
+    html += '<span class="upd">' +
+      String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ' 갱신 · 두 번 누르면 펼치기/접기</span>';
     weatherEl.innerHTML = html;
     document.getElementById('wbtn').onclick = () => {
       wcard.style.display = wcard.style.display === 'block' ? 'none' : 'block';
