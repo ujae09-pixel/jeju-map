@@ -452,26 +452,92 @@ function init() {
     else lastWTap = now;
   });
   const wcard = document.getElementById('wcard');
-  let wdata = null;
+  let wdata = null; // Open-Meteo (대체용, 먼 예보용)
+  let kma = null;   // 기상청 (weather.json, GitHub Actions 가 1시간마다 갱신)
+
+  // 기상청 하늘상태(SKY)·강수형태(PTY) -> 아이콘/문구
+  function kmaIcon(sky, pty) {
+    if (pty === 1) return ['🌧️', '비'];
+    if (pty === 2) return ['🌧️', '비/눈'];
+    if (pty === 3) return ['🌨️', '눈'];
+    if (pty === 4) return ['🌦️', '소나기'];
+    if (pty === 5) return ['🌦️', '빗방울'];
+    if (pty === 6 || pty === 7) return ['🌨️', '눈날림'];
+    if (sky === 1) return ['☀️', '맑음'];
+    if (sky === 3) return ['⛅', '구름많음'];
+    if (sky === 4) return ['☁️', '흐림'];
+    return ['❔', '-'];
+  }
+  // 중기예보 날씨 문구("구름많고 비" 등) -> 아이콘
+  function wfIcon(t) {
+    t = t || '';
+    if (t.includes('눈')) return ['🌨️', t];
+    if (t.includes('소나기')) return ['🌦️', t];
+    if (t.includes('비')) return ['🌧️', t];
+    if (t.includes('흐')) return ['☁️', t];
+    if (t.includes('구름')) return ['⛅', t];
+    if (t.includes('맑')) return ['☀️', t];
+    return ['❔', t || '-'];
+  }
+  const kmaFresh = () => !!(kma && kma.updated && (Date.now() - Date.parse(kma.updated)) < 4 * 3600 * 1000);
+
+  // 지역별 현재 날씨: 기상청 우선, 없으면 Open-Meteo
+  function currentOf(i) {
+    const name = WEATHER_REGIONS[i].name;
+    const k = kmaFresh() && kma.regions && kma.regions[name] && kma.regions[name].now;
+    if (k && k.temp != null) {
+      return { temp: k.temp, wind: k.wsd, rain: k.rn1, icon: kmaIcon(k.sky, k.pty), src: 'kma', base: k.base };
+    }
+    const d = wdata && wdata[i] && wdata[i].current;
+    if (d) {
+      return { temp: d.temperature_2m, wind: d.wind_speed_10m / 3.6, rain: d.precipitation, icon: WMO(d.weather_code), src: 'om' };
+    }
+    return null;
+  }
+
+  // 지역·날짜별 예보: 기상청 단기 -> 기상청 중기 -> Open-Meteo 순
+  function dailyOf(i, date) {
+    const r = WEATHER_REGIONS[i];
+    const kr = kmaFresh() && kma.regions && kma.regions[r.name];
+    const sd = kr && kr.daily && kr.daily[date];
+    if (sd && sd.tmx != null) {
+      return { tmx: sd.tmx, tmn: sd.tmn, pop: sd.pop, icon: kmaIcon(sd.sky, sd.pty), src: 'kma' };
+    }
+    const md = kr && !r.mountain && kr.mid && kma.mid && kma.mid[kr.mid] && kma.mid[kr.mid][date];
+    if (md && md.tmx != null) {
+      return { tmx: md.tmx, tmn: md.tmn, pop: md.pop, icon: wfIcon(md.wf), src: 'kma' };
+    }
+    const d = wdata && wdata[i];
+    const k = d ? d.daily.time.indexOf(date) : -1;
+    if (d && k >= 0) {
+      return { tmx: d.daily.temperature_2m_max[k], tmn: d.daily.temperature_2m_min[k],
+        pop: d.daily.precipitation_probability_max[k], icon: WMO(d.daily.weather_code[k]), src: 'om' };
+    }
+    return null;
+  }
 
   function renderWeather() {
-    if (!wdata) return;
-    const cur = wdata.map(d => d.current);
-    const low = wdata.map((d, i) => WEATHER_REGIONS[i].mountain ? null : d.current).filter(Boolean);
-    const avg = Math.round(low.reduce((s, c) => s + c.temperature_2m, 0) / low.length);
-    const cnt = {}; low.forEach(c => { cnt[c.weather_code] = (cnt[c.weather_code] || 0) + 1; });
-    const topCode = +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
-    const w0 = WMO(topCode);
+    const cur = WEATHER_REGIONS.map((r, i) => currentOf(i));
+    if (!cur.some(Boolean)) return;
+    const low = cur.filter((c, i) => c && !WEATHER_REGIONS[i].mountain);
+    const avg = low.length ? Math.round(low.reduce((s, c) => s + c.temp, 0) / low.length) : null;
+    const cnt = {}; low.forEach(c => { const k = c.icon[0] + '|' + c.icon[1]; cnt[k] = (cnt[k] || 0) + 1; });
+    const topKey = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+    const w0 = topKey ? topKey.split('|') : ['❔', '-'];
+    const usedKma = cur.some(c => c && c.src === 'kma');
     let html = '<button id="wbtn">📅 3일 예보</button>' +
-      '<span class="w"><b>제주도 전체</b> ' + w0[0] + ' ' + avg + '° ' + w0[1] + '</span>';
-    wdata.forEach((d, i) => {
-      const c = d.current, w = WMO(c.weather_code);
-      html += '<span class="w"><b>' + esc(WEATHER_REGIONS[i].name) + '</b> ' + w[0] + ' ' + Math.round(c.temperature_2m) + '° · 💨' +
-        (c.wind_speed_10m / 3.6).toFixed(1) + 'm/s' + (c.precipitation > 0 ? ' · 💧' + c.precipitation + 'mm' : '') + '</span>';
+      '<span class="w"><b>제주도 전체</b> ' + w0[0] + ' ' + (avg == null ? '-' : avg) + '° ' + esc(w0[1]) + '</span>';
+    cur.forEach((c, i) => {
+      if (!c) return;
+      html += '<span class="w"><b>' + esc(WEATHER_REGIONS[i].name) + '</b> ' + c.icon[0] + ' ' + Math.round(c.temp) + '° · 💨' +
+        (c.wind == null ? '-' : (+c.wind).toFixed(1)) + 'm/s' + (c.rain > 0 ? ' · 💧' + c.rain + 'mm' : '') + '</span>';
     });
+    const kc = cur.find(c => c && c.src === 'kma');
     const t = new Date();
-    html += '<span class="upd">' +
-      String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ' 갱신 · 두 번 누르면 펼치기/접기</span>';
+    const stamp = usedKma
+      ? '기상청 ' + ((kc.base || '').slice(11, 16)) + ' 기준'
+      : 'Open-Meteo ' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ' 갱신';
+    html += '<span class="upd">' + stamp + ' · 두 번 누르면 펼치기/접기</span>';
     weatherEl.innerHTML = html;
     document.getElementById('wbtn').onclick = () => {
       wcard.style.display = wcard.style.display === 'block' ? 'none' : 'block';
@@ -480,40 +546,55 @@ function init() {
     // 여행 날짜 예보 표
     const dates = TRIP_DATES;
     let tb = '<table><tr><th>지역</th>' + dates.map(d => '<th>' + d.slice(5).replace('-', '/') + '</th>').join('') + '</tr>';
-    wdata.forEach((d, i) => {
-      tb += '<tr><td>' + esc(WEATHER_REGIONS[i].name) + '</td>';
+    WEATHER_REGIONS.forEach((r, i) => {
+      tb += '<tr><td>' + esc(r.name) + '</td>';
       dates.forEach(date => {
-        const k = d.daily.time.indexOf(date);
-        if (k < 0) { tb += '<td>-</td>'; return; }
-        const w = WMO(d.daily.weather_code[k]);
-        tb += '<td>' + w[0] + ' ' + Math.round(d.daily.temperature_2m_max[k]) + '° / ' + Math.round(d.daily.temperature_2m_min[k]) +
-          '°<br><small style="margin:0">☔ ' + d.daily.precipitation_probability_max[k] + '%</small></td>';
+        const d = dailyOf(i, date);
+        if (!d) { tb += '<td>-</td>'; return; }
+        tb += '<td>' + d.icon[0] + ' ' + Math.round(d.tmx) + '° / ' + (d.tmn == null ? '-' : Math.round(d.tmn)) + '°' + (d.src === 'om' ? '*' : '') +
+          '<br><small style="margin:0">☔ ' + (d.pop == null ? '-' : Math.round(d.pop)) + '%</small></td>';
       });
       tb += '</tr>';
     });
-    tb += '</table><small>※ Open-Meteo 예보 모델 값이며 기상청 공식 예보·특보와 다를 수 있습니다. ' +
-      '비·바람 특보 등은 <a href="https://www.weather.go.kr" target="_blank" rel="noopener">기상청 날씨누리</a>에서 확인하세요. ' +
-      '예보 가능 기간(약 16일) 밖의 날짜는 "-"로 표시됩니다.</small>';
+    tb += '</table><small>※ ' + (usedKma
+        ? '기상청 단기·중기예보를 우선 표시하고, 기상청 값이 없는 날짜는 Open-Meteo 값(*)으로 채웁니다. 중기예보는 제주/서귀포 단위라 지역별 차이는 반영되지 않습니다. 한라산 산간은 격자 값이라 실제와 다를 수 있습니다.'
+        : 'Open-Meteo 예보 모델 값입니다. (기상청 자료 준비 중)') +
+      ' 비·바람 특보는 <a href="https://www.weather.go.kr" target="_blank" rel="noopener">기상청 날씨누리</a>에서 확인하세요.</small>';
     wcard.innerHTML = tb;
   }
 
-  function loadWeather() {
+  let weatherShown = false;
+
+  function loadKma() {
+    return fetch('weather.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { kma = (j && j.updated) ? j : null; })
+      .catch(() => { kma = null; });
+  }
+
+  function loadOpenMeteo() {
     const lat = WEATHER_REGIONS.map(r => r.lat).join(',');
     const lng = WEATHER_REGIONS.map(r => r.lng).join(',');
     const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lng +
       '&current=temperature_2m,weather_code,wind_speed_10m,precipitation' +
       '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
       '&timezone=Asia%2FSeoul&forecast_days=16';
-    fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(j => {
-        const first = !wdata;
-        wdata = Array.isArray(j) ? j : [j];
-        renderWeather();
-        // 처음 날씨가 뜨면 상단 메뉴 높이가 바뀌므로 핀이 가려지지 않게 지도 범위를 다시 맞춤
-        if (first) setTimeout(() => apply(true), 80);
-      })
-      .catch(() => { if (!wdata) weatherEl.textContent = '날씨 정보를 불러오지 못했습니다. (인터넷 연결 확인)'; });
+    return fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(j => { wdata = Array.isArray(j) ? j : [j]; })
+      .catch(() => {});
   }
+
+  function loadWeather() {
+    Promise.all([loadKma(), loadOpenMeteo()]).then(() => {
+      const ok = WEATHER_REGIONS.some((r, i) => currentOf(i));
+      if (!ok) { if (!weatherShown) weatherEl.textContent = '날씨 정보를 불러오지 못했습니다. (인터넷 연결 확인)'; return; }
+      const first = !weatherShown; weatherShown = true;
+      renderWeather();
+      // 처음 날씨가 뜨면 상단 메뉴 높이가 바뀌므로 핀이 가려지지 않게 지도 범위를 다시 맞춤
+      if (first) setTimeout(() => apply(true), 80);
+    });
+  }
+
   loadWeather();
   setInterval(loadWeather, 10 * 60 * 1000);
 
