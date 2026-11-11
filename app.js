@@ -40,7 +40,7 @@ function init() {
     const key = category + '|' + kind;
     if (imgCache[key]) return imgCache[key];
     const c = CATEGORIES[category];
-    const mine = kind === 'mine';
+    const mine = true; // 모든 핀을 같은 모양(실선, 큰 크기)으로 표시
     const w = mine ? 40 : 32, h = mine ? 52 : 42;
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 40 52">' +
@@ -277,7 +277,7 @@ function init() {
       const el = document.createElement('div'); el.className = 'li';
       el.innerHTML =
         '<div><span class="cat" style="background:' + c.color + '">' + c.emoji + ' ' + esc(p.category) + '</span>' +
-        '<span class="kd">' + (p.kind === 'mine' ? '⭐ 반드시 방문' : '선택 추천') + '</span></div>' +
+        '</div>' +
         '<div class="nm" style="margin-top:4px">' + esc(p.name) + '</div>' +
         '<div class="d">' + esc((p.tag ? p.tag + ' · ' : '') + p.address) + '</div>' +
         '<div class="d2">' + esc(p.intro) + '</div>';
@@ -335,7 +335,6 @@ function init() {
     detail.innerHTML =
       '<span class="badge" style="background:' + c.color + '">' + c.emoji + ' ' + esc(p.category) + '</span>' +
       (p.tag ? '<span class="tagk">' + esc(p.tag) + '</span>' : '') +
-      '<span class="kindbadge ' + p.kind + '">' + (p.kind === 'mine' ? '⭐ 반드시 방문' : '선택 추천') + '</span>' +
       '<h2>' + esc(p.name) + '</h2>' +
       (p.photo ? '<img src="' + esc(safeUrl(p.photo)) + '" alt="' + esc(p.name) + '">' : '') +
       '<div class="row"><span class="label">일정</span>' + esc(dayText) + '</div>' +
