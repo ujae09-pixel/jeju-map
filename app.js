@@ -479,14 +479,16 @@ function init() {
     if (t.includes('맑')) return ['☀️', t];
     return ['❔', t || '-'];
   }
+  const okVal = v => v != null && v > -900; // 기상청 결측값(-999, -998.9)은 사용하지 않음
   const kmaFresh = () => !!(kma && kma.updated && (Date.now() - Date.parse(kma.updated)) < 4 * 3600 * 1000);
 
   // 지역별 현재 날씨: 기상청 우선, 없으면 Open-Meteo
   function currentOf(i) {
     const name = WEATHER_REGIONS[i].name;
     const k = kmaFresh() && kma.regions && kma.regions[name] && kma.regions[name].now;
-    if (k && k.temp != null) {
-      return { temp: k.temp, wind: k.wsd, rain: k.rn1, icon: kmaIcon(k.sky, k.pty), src: 'kma', base: k.base };
+    if (k && okVal(k.temp)) { // 기상청 결측값(-999 등)이면 Open-Meteo 로 대체
+      return { temp: k.temp, wind: okVal(k.wsd) ? k.wsd : null, rain: okVal(k.rn1) ? k.rn1 : 0,
+        icon: kmaIcon(k.sky, k.pty), src: 'kma', base: k.base };
     }
     const d = wdata && wdata[i] && wdata[i].current;
     if (d) {
@@ -500,12 +502,12 @@ function init() {
     const r = WEATHER_REGIONS[i];
     const kr = kmaFresh() && kma.regions && kma.regions[r.name];
     const sd = kr && kr.daily && kr.daily[date];
-    if (sd && sd.tmx != null) {
-      return { tmx: sd.tmx, tmn: sd.tmn, pop: sd.pop, icon: kmaIcon(sd.sky, sd.pty), src: 'kma' };
+    if (sd && okVal(sd.tmx)) {
+      return { tmx: sd.tmx, tmn: okVal(sd.tmn) ? sd.tmn : null, pop: sd.pop, icon: kmaIcon(sd.sky, sd.pty), src: 'kma' };
     }
     const md = kr && !r.mountain && kr.mid && kma.mid && kma.mid[kr.mid] && kma.mid[kr.mid][date];
-    if (md && md.tmx != null) {
-      return { tmx: md.tmx, tmn: md.tmn, pop: md.pop, icon: wfIcon(md.wf), src: 'kma' };
+    if (md && okVal(md.tmx)) {
+      return { tmx: md.tmx, tmn: okVal(md.tmn) ? md.tmn : null, pop: md.pop, icon: wfIcon(md.wf), src: 'kma' };
     }
     const d = wdata && wdata[i];
     const k = d ? d.daily.time.indexOf(date) : -1;

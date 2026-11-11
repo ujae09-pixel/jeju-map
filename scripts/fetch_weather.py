@@ -95,10 +95,12 @@ def call(base, endpoint, params, errors, label):
 
 
 def num(v, default=None):
+    """숫자로 변환. 기상청은 결측값을 -999, -998.9 등으로 주므로 None 으로 처리."""
     try:
-        return float(v)
+        f = float(v)
     except (TypeError, ValueError):
         return default
+    return default if f <= -900 else f
 
 
 # ---------- 현재 날씨 (초단기실황) ----------
