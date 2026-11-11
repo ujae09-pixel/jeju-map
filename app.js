@@ -95,9 +95,7 @@ function init() {
   const filters = document.getElementById('filters');
   const rowDay = document.createElement('div'); rowDay.className = 'frow';
   const rowCat = document.createElement('div'); rowCat.className = 'frow';
-  const card = document.createElement('div'); card.id = 'tripcard';
-  card.innerHTML = '<b>' + esc(TRIP.title) + '</b>' + TRIP.lines.map(esc).join('<br>');
-  filters.append(rowDay, rowCat, card);
+  filters.append(rowDay, rowCat);
 
   function chip(parent, label, onclick) {
     const b = document.createElement('button');
@@ -112,9 +110,6 @@ function init() {
   });
   const listChip = chip(rowDay, '📋 목록', () => { state.list = !state.list; renderList(); });
   const routeChip = chip(rowDay, '🔢 방문순서 보기', () => { state.route = !state.route; apply(false); });
-  chip(rowDay, '✈️ 일정', () => {
-    card.style.display = card.style.display === 'block' ? 'none' : 'block';
-  });
   const restroomChip = chip(rowDay, '🚻 화장실 찾기', () => toggleRestroom());
   const restroomBox = document.createElement('div'); restroomBox.id = 'restroom';
   filters.appendChild(restroomBox);
@@ -256,7 +251,12 @@ function init() {
     if (fit && shown.length) {
       const b = new kakao.maps.LatLngBounds();
       shown.forEach(it => b.extend(it.marker.getPosition()));
-      map.setBounds(b, 90, 40, 40, 40);
+      // 위쪽 메뉴(날씨+필터)와 아래쪽 목록에 핀이 가려지지 않도록 여백 계산
+      const mob = isMobile();
+      const topPad = mob ? Math.ceil(filters.getBoundingClientRect().bottom) + 10 : 90;
+      const botPad = (mob && state.list) ? Math.round(window.innerHeight * 0.42) + 10 : 40;
+      const side = mob ? 14 : 40;
+      map.setBounds(b, topPad, side, botPad, side);
     }
     lastShown = shown;
     paintChips();
@@ -435,6 +435,13 @@ function init() {
     return ['❔', '-'];
   };
   const weatherEl = document.getElementById('weather');
+  // 날씨 줄이 줄바꿈으로 높이가 바뀌어도 아래 메뉴가 겹치지 않도록 높이를 CSS 변수로 전달
+  function syncWeatherHeight() {
+    document.documentElement.style.setProperty('--wh', weatherEl.offsetHeight + 'px');
+  }
+  if (window.ResizeObserver) new ResizeObserver(syncWeatherHeight).observe(weatherEl);
+  window.addEventListener('resize', syncWeatherHeight);
+  syncWeatherHeight();
   const wcard = document.getElementById('wcard');
   let wdata = null;
 
@@ -488,7 +495,13 @@ function init() {
       '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
       '&timezone=Asia%2FSeoul&forecast_days=16';
     fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(j => { wdata = Array.isArray(j) ? j : [j]; renderWeather(); })
+      .then(j => {
+        const first = !wdata;
+        wdata = Array.isArray(j) ? j : [j];
+        renderWeather();
+        // 처음 날씨가 뜨면 상단 메뉴 높이가 바뀌므로 핀이 가려지지 않게 지도 범위를 다시 맞춤
+        if (first) setTimeout(() => apply(true), 80);
+      })
       .catch(() => { if (!wdata) weatherEl.textContent = '날씨 정보를 불러오지 못했습니다. (인터넷 연결 확인)'; });
   }
   loadWeather();
