@@ -497,18 +497,19 @@ function init() {
     return null;
   }
 
-  // 지역·날짜별 예보: 기상청 단기 -> 기상청 중기 -> Open-Meteo 순
-  function dailyOf(i, date) {
-    const r = WEATHER_REGIONS[i];
-    const kr = kmaFresh() && kma.regions && kma.regions[r.name];
-    const sd = kr && kr.daily && kr.daily[date];
-    if (sd && okVal(sd.tmx)) {
-      return { tmx: sd.tmx, tmn: okVal(sd.tmn) ? sd.tmn : null, pop: sd.pop, icon: kmaIcon(sd.sky, sd.pty), src: 'kma' };
-    }
-    const md = kr && !r.mountain && kr.mid && kma.mid && kma.mid[kr.mid] && kma.mid[kr.mid][date];
-    if (md && okVal(md.tmx)) {
-      return { tmx: md.tmx, tmn: okVal(md.tmn) ? md.tmn : null, pop: md.pop, icon: wfIcon(md.wf), src: 'kma' };
-    }
+  // ---- 날짜 도우미 (한국시간 기준) ----
+  const todayKST = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date()); // YYYY-MM-DD
+  const addDays = (s, n) => {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+  };
+  const dayLabel = s => {
+    const [y, m, d] = s.split('-').map(Number);
+    return m + '/' + d + '(' + '일월화수목금토'[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] + ')';
+  };
+
+  // Open-Meteo 일별 값 (기상청 값이 없을 때 대체)
+  function omDaily(i, date) {
     const d = wdata && wdata[i];
     const k = d ? d.daily.time.indexOf(date) : -1;
     if (d && k >= 0) {
@@ -516,6 +517,32 @@ function init() {
         pop: d.daily.precipitation_probability_max[k], icon: WMO(d.daily.weather_code[k]), src: 'om' };
     }
     return null;
+  }
+
+  // 단기예보(지역별): 기상청 단기예보 -> 없으면 Open-Meteo
+  function shortOf(i, date) {
+    const kr = kmaFresh() && kma.regions && kma.regions[WEATHER_REGIONS[i].name];
+    const sd = kr && kr.daily && kr.daily[date];
+    if (sd && okVal(sd.tmx)) {
+      return { tmx: sd.tmx, tmn: okVal(sd.tmn) ? sd.tmn : null, pop: sd.pop, icon: kmaIcon(sd.sky, sd.pty), src: 'kma' };
+    }
+    return omDaily(i, date);
+  }
+
+  // 중기예보(제주/서귀포 단위): 기상청 중기예보 -> 없으면 Open-Meteo
+  function midOf(area, date) {
+    const md = kmaFresh() && kma.mid && kma.mid[area] && kma.mid[area][date];
+    if (md && okVal(md.tmx)) {
+      return { tmx: md.tmx, tmn: okVal(md.tmn) ? md.tmn : null, pop: md.pop, icon: wfIcon(md.wf), src: 'kma' };
+    }
+    const idx = WEATHER_REGIONS.findIndex(r => r.name === (area === '서귀포' ? '서귀포' : '제주시'));
+    return idx >= 0 ? omDaily(idx, date) : null;
+  }
+
+  function dayCell(d) {
+    if (!d) return '<td>-</td>';
+    return '<td>' + d.icon[0] + '<br>' + Math.round(d.tmx) + '°/' + (d.tmn == null ? '-' : Math.round(d.tmn)) + '°' + (d.src === 'om' ? '*' : '') +
+      '<br><small style="margin:0">☔' + (d.pop == null ? '-' : Math.round(d.pop)) + '%</small></td>';
   }
 
   function renderWeather() {
@@ -527,7 +554,7 @@ function init() {
     const topKey = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
     const w0 = topKey ? topKey.split('|') : ['❔', '-'];
     const usedKma = cur.some(c => c && c.src === 'kma');
-    let html = '<button id="wbtn">📅 3일 예보</button>' +
+    let html = '<button id="wbtn">📅 단기·중기 예보</button>' +
       '<span class="w"><b>제주도 전체</b> ' + w0[0] + ' ' + (avg == null ? '-' : avg) + '° ' + esc(w0[1]) + '</span>';
     cur.forEach((c, i) => {
       if (!c) return;
@@ -545,21 +572,31 @@ function init() {
       wcard.style.display = wcard.style.display === 'block' ? 'none' : 'block';
     };
 
-    // 여행 날짜 예보 표
-    const dates = TRIP_DATES;
-    let tb = '<table><tr><th>지역</th>' + dates.map(d => '<th>' + d.slice(5).replace('-', '/') + '</th>').join('') + '</tr>';
+    // 단기예보(실시간): 오늘~3일 뒤 / 중기예보: 단기예보 다음 날부터 4일
+    const today = todayKST();
+    const shortDates = [0, 1, 2, 3].map(n => addDays(today, n));
+    const midDates = [4, 5, 6, 7].map(n => addDays(today, n));
+    const kbase = kc && kc.base ? kc.base.slice(11, 16) + ' 기준' : '';
+
+    let tb = '<div style="font-weight:600;margin-bottom:4px">단기예보 (실시간)' +
+      '<span style="font-weight:400;color:#888"> · ' + (usedKma ? '기상청 ' + kbase : 'Open-Meteo') + ' · 오늘~3일 뒤</span></div>' +
+      '<table><tr><th>지역</th><th>지금</th>' + shortDates.map((d, k) => '<th>' + (k === 0 ? '오늘' : dayLabel(d)) + '</th>').join('') + '</tr>';
     WEATHER_REGIONS.forEach((r, i) => {
-      tb += '<tr><td>' + esc(r.name) + '</td>';
-      dates.forEach(date => {
-        const d = dailyOf(i, date);
-        if (!d) { tb += '<td>-</td>'; return; }
-        tb += '<td>' + d.icon[0] + ' ' + Math.round(d.tmx) + '° / ' + (d.tmn == null ? '-' : Math.round(d.tmn)) + '°' + (d.src === 'om' ? '*' : '') +
-          '<br><small style="margin:0">☔ ' + (d.pop == null ? '-' : Math.round(d.pop)) + '%</small></td>';
-      });
-      tb += '</tr>';
+      const c = cur[i];
+      tb += '<tr><td>' + esc(r.name) + '</td>' +
+        (c ? '<td>' + c.icon[0] + '<br>' + Math.round(c.temp) + '°</td>' : '<td>-</td>') +
+        shortDates.map(date => dayCell(shortOf(i, date))).join('') + '</tr>';
+    });
+    tb += '</table>';
+
+    tb += '<div style="font-weight:600;margin:12px 0 4px">중기예보 (4일)' +
+      '<span style="font-weight:400;color:#888"> · 단기예보 다음 날부터 · 제주/서귀포 단위</span></div>' +
+      '<table><tr><th>지역</th>' + midDates.map(d => '<th>' + dayLabel(d) + '</th>').join('') + '</tr>';
+    ['제주', '서귀포'].forEach(area => {
+      tb += '<tr><td>' + area + '</td>' + midDates.map(date => dayCell(midOf(area, date))).join('') + '</tr>';
     });
     tb += '</table><small>※ ' + (usedKma
-        ? '기상청 단기·중기예보를 우선 표시하고, 기상청 값이 없는 날짜는 Open-Meteo 값(*)으로 채웁니다. 중기예보는 제주/서귀포 단위라 지역별 차이는 반영되지 않습니다. 한라산 산간은 격자 값이라 실제와 다를 수 있습니다.'
+        ? '기상청 단기·중기예보 값입니다. 기상청 값이 없는 칸은 Open-Meteo 값(*)으로 채웁니다. 한라산 산간은 격자 값이라 실제와 다를 수 있습니다.'
         : 'Open-Meteo 예보 모델 값입니다. (기상청 자료 준비 중)') +
       ' 비·바람 특보는 <a href="https://www.weather.go.kr" target="_blank" rel="noopener">기상청 날씨누리</a>에서 확인하세요.</small>';
     wcard.innerHTML = tb;
