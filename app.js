@@ -65,6 +65,22 @@ function init() {
       .forEach((p, i) => { rank[d][p.name] = i + 1; });
   });
 
+  // 선택된 핀: 빨간색 + 더 크게 (일반 핀과 한눈에 구분)
+  let selImg = {};
+  function pinImageSelected(category) {
+    if (selImg[category]) return selImg[category];
+    const c = CATEGORIES[category];
+    const w = 52, h = 68;
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 40 52">' +
+      '<path d="M20 1C9.5 1 1 9.5 1 20c0 14 19 31 19 31s19-17 19-31C39 9.5 30.5 1 20 1z" fill="#e03131" stroke="#fff" stroke-width="2"/>' +
+      '<circle cx="20" cy="20" r="14" fill="#fff"/>' +
+      '<text x="20" y="26" font-size="16" text-anchor="middle">' + c.emoji + '</text></svg>';
+    return (selImg[category] = new kakao.maps.MarkerImage(
+      'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg),
+      new kakao.maps.Size(w, h), { offset: new kakao.maps.Point(w / 2, h) }));
+  }
+
   // ---- 마커 생성 ----
   const items = PLACES.map(p => {
     const marker = new kakao.maps.Marker({
@@ -75,6 +91,39 @@ function init() {
     kakao.maps.event.addListener(marker, 'click', () => showDetail(p));
     return { p, marker, overlay: null };
   });
+  const itemByName = new Map(items.map(it => [it.p.name, it]));
+
+  // ---- 선택 표시: 지도에서 핀이 빨갛게 커지고 이름표가 붙으며, 목록 항목도 강조 ----
+  let selected = null, selLabel = null;
+  function clearSelected() {
+    if (selected) {
+      selected.marker.setImage(pinImage(selected.p.category, selected.p.kind));
+      selected.marker.setZIndex(0);
+      selected = null;
+    }
+    if (selLabel) { selLabel.setMap(null); selLabel = null; }
+    document.querySelectorAll('#list .li.sel').forEach(e => e.classList.remove('sel'));
+  }
+  function setSelected(p) {
+    clearSelected();
+    const it = itemByName.get(p.name);
+    if (!it) return;
+    selected = it;
+    it.marker.setImage(pinImageSelected(p.category));
+    it.marker.setZIndex(200);
+    selLabel = new kakao.maps.CustomOverlay({
+      position: it.marker.getPosition(), xAnchor: 0.5, yAnchor: 1, zIndex: 300,
+      content: '<div style="transform:translateY(-74px);background:#e03131;color:#fff;font-size:12px;font-weight:700;' +
+        'padding:3px 9px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4);pointer-events:none">' +
+        esc(p.name) + '</div>'
+    });
+    selLabel.setMap(map);
+    document.querySelectorAll('#list .li').forEach(e => {
+      const on = e.dataset.name === p.name;
+      e.classList.toggle('sel', on);
+      if (on && e.scrollIntoView) e.scrollIntoView({ block: 'nearest' });
+    });
+  }
 
   // ---- 필터 상태 ----
   const state = { day: 'all', cat: '전체', route: false, list: false };
@@ -274,7 +323,7 @@ function init() {
     listEl.innerHTML = '<div class="lh">' + esc(title) + '</div>';
     arr.forEach(it => {
       const p = it.p, c = CATEGORIES[p.category];
-      const el = document.createElement('div'); el.className = 'li';
+      const el = document.createElement('div'); el.className = 'li'; el.dataset.name = p.name;
       el.innerHTML =
         '<div><span class="cat" style="background:' + c.color + '">' + c.emoji + ' ' + esc(p.category) + '</span>' +
         '</div>' +
@@ -314,6 +363,7 @@ function init() {
   }
 
   function showDetail(p, zoom) {
+    setSelected(p);
     const c = CATEGORIES[p.category];
     const q = encodeURIComponent(p.name.replace(/\s*\(.*\)$/, ''));
     const dayText = p.days.map(d => DAYS[d]).join(' · ');
@@ -364,7 +414,7 @@ function init() {
     }
   }
 
-  function closePanel() { panel.classList.remove('open'); updateListVisibility(); }
+  function closePanel() { panel.classList.remove('open'); clearSelected(); updateListVisibility(); }
   document.getElementById('close').onclick = closePanel;
   kakao.maps.event.addListener(map, 'click', closePanel);
 
