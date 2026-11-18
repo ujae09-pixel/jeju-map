@@ -159,7 +159,7 @@ function init() {
   });
   const listChip = chip(rowDay, '📋 목록', () => { state.list = !state.list; renderList(); });
   const routeChip = chip(rowDay, '🔢 방문순서 보기', () => { state.route = !state.route; apply(false); });
-  const restroomChip = chip(rowDay, '🚻 화장실 찾기', () => toggleRestroom());
+  const restroomChip = chip(rowDay, '🚻 화장실', () => toggleRestroom());
   const restroomBox = document.createElement('div'); restroomBox.id = 'restroom';
   filters.appendChild(restroomBox);
 
