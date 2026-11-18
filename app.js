@@ -281,7 +281,7 @@ function init() {
         '<div class="nm" style="margin-top:4px">' + esc(p.name) + '</div>' +
         '<div class="d">' + esc((p.tag ? p.tag + ' · ' : '') + p.address) + '</div>' +
         '<div class="d2">' + esc(p.intro) + '</div>';
-      el.onclick = () => showDetail(p);
+      el.onclick = () => showDetail(p, true); // 목록에서 누르면 해당 장소로 확대
       listEl.appendChild(el);
     });
     listEl.scrollTop = 0;
@@ -313,7 +313,7 @@ function init() {
     }
   }
 
-  function showDetail(p) {
+  function showDetail(p, zoom) {
     const c = CATEGORIES[p.category];
     const q = encodeURIComponent(p.name.replace(/\s*\(.*\)$/, ''));
     const dayText = p.days.map(d => DAYS[d]).join(' · ');
@@ -352,7 +352,16 @@ function init() {
     document.getElementById('navibtn').onclick = ev => { ev.preventDefault(); startNavi(p.name, p.lat, p.lng); };
     panel.classList.add('open');
     updateListVisibility();
-    map.panTo(new kakao.maps.LatLng(p.lat, p.lng));
+    const ll = new kakao.maps.LatLng(p.lat, p.lng);
+    if (zoom) {
+      // 장소 주변이 보이도록 확대 (숫자가 작을수록 더 확대)
+      if (map.getLevel() > 4) map.setLevel(4);
+      map.setCenter(ll);
+      // 모바일: 아래쪽 소개 시트에 핀이 가려지지 않도록 위로 올려서 보여줌
+      if (isMobile()) setTimeout(() => map.panBy(0, Math.round(window.innerHeight * 0.22)), 50);
+    } else {
+      map.panTo(ll);
+    }
   }
 
   function closePanel() { panel.classList.remove('open'); updateListVisibility(); }
